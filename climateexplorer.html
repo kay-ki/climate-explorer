@@ -573,27 +573,7 @@
       margin-top: 0.25rem;
     }
     
-    .confidence {
-      font-size: 0.8rem;
-      padding: 2px 6px;
-      border-radius: 4px;
-      margin-left: 5px;
-    }
-    
-    .confidence-high {
-      background-color: rgba(67, 170, 139, 0.2);
-      color: var(--success);
-    }
-    
-    .confidence-medium {
-      background-color: rgba(248, 150, 30, 0.2);
-      color: var(--warning);
-    }
-    
-    .confidence-low {
-      background-color: rgba(231, 111, 81, 0.2);
-      color: var(--danger);
-    }
+
     
     .search-box {
       position: relative;
@@ -872,7 +852,6 @@
     <li>Feature engineering: lagged values, rolling averages, seasonality, and trend decomposition</li>
     <li>Regional climate clustering for pattern recognition and realistic variations</li>
     <li>Best single model selected using grid search and performance metrics</li>
-    <li>Confidence intervals based on model performance and prediction horizon</li>
   </ul>
   
   <p style="margin-top: 12px;"><strong>Tech Stack:</strong> Python, Pandas, NumPy, Scikit-learn, Prophet, Statsmodels, D3.js, Vue.js</p>
@@ -1105,12 +1084,6 @@
               <div class="stat-label">Actual Temperature</div>
             </div>
 
-<div class="stat-card" v-if="isPredictionYear(selectedYear) && selectedVariable === 'temperature' && getCountryFactorValue(selectedCountry, 'interval_width') !== 0">
-<div class="stat-value">
-  ±{{ getCountryFactorValue(selectedCountry, 'interval_width').toFixed(1) }}°C
-</div>
-  <div class="stat-label">Confidence Interval</div>
-</div>
 
             
             <div class="stat-card" v-if="selectedVariable === 'precipitation'">
@@ -1461,17 +1434,6 @@
           return stops[stops.length - 1].color;
         },
 
-getConfidenceIntervalWidth(country) {
-  const countryData = this.data.find(d => 
-    d.country === country && d.year === this.selectedYear
-  );
-  
-  if (countryData && countryData.interval_width !== undefined && countryData.interval_width !== null) {
-    return countryData.interval_width.toFixed(1);
-  }
-  
-  return null;
-},
         
 getColorForPrecipitationPercent(percent) {
   if (percent === null || percent === undefined || isNaN(percent)) {
@@ -1875,13 +1837,6 @@ getCountryNameFromId(id) {
           ).length;
         },
 
-        debugConfidenceData(country) {
-  const countryData = this.data.find(d => 
-    d.country === country && d.year === this.selectedYear
-  );
-  console.log('Confidence debug:', countryData);
-  return countryData;
-},
 
         debugCountryMapping() {
   console.log("=== TopoJSON Countries ===");
@@ -1968,13 +1923,7 @@ getCountryNameFromId(id) {
           return countryData ? countryData[factorId] || 0 : 0;
         },
         
-        getCountryPredictionConfidence(country) {
-          const countryData = this.data.find(d => 
-            d.country === country && d.year === this.selectedYear
-          );
-          
-          return countryData ? countryData.prediction_confidence : null;
-        },
+
         
         isPredictionYear(year) {
           return year >= this.predictionStartYear;

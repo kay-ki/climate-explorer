@@ -292,6 +292,27 @@ def add_features(df, target_col):
 # %%
 
 
+def reverse_transforms(predictions, transform_info, last_value=None):
+    """Reverse transformations applied to make data stationary"""
+    result = predictions.copy()
+
+    # Undo differencing
+    if transform_info['differenced'] and last_value is not None:
+        result = np.insert(result, 0, last_value)
+        result = np.cumsum(result)[1:]
+
+    # Undo log transform
+    if transform_info['log_transform']:
+        # Use a different approach for confidence bounds
+        if len(result.shape) > 1 or isinstance(result, tuple):
+            # Handle confidence bounds separately
+            result = np.expm1(result)
+        else:
+            result = np.expm1(result)
+
+    return result
+
+
 def build_sarima_model(train_data, test_data, target_col, country_code, forecast_steps=360):
     """Build SARIMA model with auto-parameter selection"""
     try:
@@ -366,12 +387,30 @@ def build_sarima_model(train_data, test_data, target_col, country_code, forecast
         future_forecast = reverse_transforms(
             raw_future_forecast, transform_info, last_train_value)
 
-        # Get confidence intervals
+        # Get confidence intervals - need special handling for log transform!
         pred_interval = model_fit.get_forecast(steps=forecast_steps).conf_int()
-        lower_bounds = reverse_transforms(
-            pred_interval.iloc[:, 0], transform_info, last_train_value)
-        upper_bounds = reverse_transforms(
-            pred_interval.iloc[:, 1], transform_info, last_train_value)
+
+        if transform_info['log_transform']:
+            # For log transform, we need to be extra careful with intervals
+            # Transform the point forecast first
+            point_forecast = reverse_transforms(
+                raw_future_forecast, transform_info, last_train_value)
+
+            # For log-transformed data, use percentage-based intervals
+            lower_pct = pred_interval.iloc[:, 0] - raw_future_forecast
+            upper_pct = pred_interval.iloc[:, 1] - raw_future_forecast
+
+            # Apply percentage adjustments to the untransformed forecast
+            lower_bounds = point_forecast * \
+                (1 + lower_pct.apply(lambda x: np.tanh(x)))
+            upper_bounds = point_forecast * \
+                (1 + upper_pct.apply(lambda x: np.tanh(x)))
+        else:
+            # Non-log-transformed: use standard reversal
+            lower_bounds = reverse_transforms(
+                pred_interval.iloc[:, 0], transform_info, last_train_value)
+            upper_bounds = reverse_transforms(
+                pred_interval.iloc[:, 1], transform_info, last_train_value)
 
         return {
             'model': model_fit,
@@ -508,11 +547,16 @@ def build_gbr_model(train_data, test_data, target_col, country_code, forecast_st
         # Predict future
         future_forecast = best_model.predict(future_data)
 
-        # Create confidence intervals
-        std_error = np.sqrt(mean_squared_error(
-            y_train, best_model.predict(X_train)))
-        lower_bounds = future_forecast - 1.96 * std_error
-        upper_bounds = future_forecast + 1.96 * std_error
+        # Calculate CORRECT confidence intervals
+        # Use standard error from test data, not training data
+        test_errors = y_test - best_model.predict(X_test)
+        std_error = np.std(test_errors)
+
+        # Increase uncertainty with prediction distance
+        uncertainty = std_error * np.sqrt(np.arange(1, forecast_steps + 1))
+
+        lower_bounds = future_forecast - 1.96 * uncertainty
+        upper_bounds = future_forecast + 1.96 * uncertainty
 
         return {
             'model': best_model,
@@ -521,9 +565,6 @@ def build_gbr_model(train_data, test_data, target_col, country_code, forecast_st
             'lower': lower_bounds,
             'upper': upper_bounds
         }
-    except Exception as e:
-        print(f"  GBR error for {country_code}")
-        return None
 
 
 def generate_future_features(historical_data, steps, feature_cols=None):
