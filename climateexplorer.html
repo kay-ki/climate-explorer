@@ -1,0 +1,2070 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="pragma" content="no-cache" />
+  <meta http-equiv="expires" content="0" />
+  <title>Climate Explorer: Global Temperature & Precipitation Trends</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.global.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+  <style>
+    :root {
+      --primary: #1d3557;
+      --primary-light: #457b9d;
+      --secondary: #e63946;
+      --dark: #1d3557;
+      --danger: #e63946;
+      --light: #f8f9fa;
+      --medium: #6c757d;
+      --success: #43aa8b;
+      --warning: #ffb703;
+      --info: #4cc9f0;
+      --warm: #e63946;
+      --neutral: #457b9d;
+      --cool: #1d3557;
+      --dry: #ffb703;
+      --wet: #219ebc;
+    }
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    
+    body {
+      background-color: #f5f5f5;
+      color: var(--dark);
+    }
+    
+    .app-container {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      grid-template-rows: auto 1fr auto;
+      grid-template-areas: 
+        "header header"
+        "sidebar main"
+        "footer footer";
+      height: 100vh;
+      max-height: 100vh;
+      overflow: hidden;
+    }
+    
+    .header {
+      grid-area: header;
+      background-color: var(--dark);
+      color: white;
+      padding: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 3px solid var(--primary-light);
+    }
+    
+    .header h1 {
+      display: flex;
+      align-items: center;
+      font-size: 1.5rem;
+    }
+    
+    .header h1 svg {
+      margin-right: 10px;
+    }
+    
+    .header h1 span {
+      color: var(--secondary);
+    }
+    
+    .sidebar {
+      grid-area: sidebar;
+      background-color: white;
+      box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+      padding: 1.5rem;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      z-index: 10;
+    }
+    
+    .main-content {
+      grid-area: main;
+      padding: 1rem;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    
+    .footer {
+      grid-area: footer;
+      background-color: var(--dark);
+      color: white;
+      padding: 0.75rem;
+      text-align: center;
+      font-size: 0.9rem;
+    }
+    
+    .control-section {
+      background-color: white;
+      border-radius: 8px;
+      padding: 1.25rem;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    }
+    
+    .control-section h3 {
+      margin-bottom: 1rem;
+      font-size: 1.1rem;
+      color: var(--dark);
+      border-bottom: 2px solid var(--primary-light);
+      padding-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+    }
+    
+    .control-section h3 svg {
+      margin-right: 8px;
+    }
+    
+    .factor-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    
+    .factor-btn {
+      padding: 0.6rem;
+      border: none;
+      border-radius: 6px;
+      background-color: #f1f1f1;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+    }
+    
+    .factor-btn.active {
+      background-color: var(--primary);
+      color: white;
+    }
+    
+    .factor-btn:hover:not(.active) {
+      background-color: #e0e0e0;
+    }
+    
+    .factor-color {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-right: 8px;
+      display: inline-block;
+    }
+    
+    .map-container {
+      position: relative;
+      height: calc(100vh - 180px);
+      background-color: white;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    }
+    
+    .map-svg {
+      width: 100%;
+      height: 100%;
+    }
+    
+    .country {
+      stroke: #fff;
+      stroke-width: 0.5px;
+      vector-effect: non-scaling-stroke;
+      transition: fill 0.3s ease;
+      cursor: pointer;
+    }
+    
+    .country:hover {
+      stroke-width: 1.5px;
+      stroke: var(--dark);
+    }
+    
+    .country.selected {
+      stroke-width: 2px;
+      stroke: var(--secondary);
+    }
+    
+    .map-overlay {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background-color: rgba(255, 255, 255, 0.9);
+      padding: 1rem;
+      border-radius: 8px;
+      box-shadow: 0 2px 15px rgba(0, 0, 0, 0.1);
+      max-width: 400px;
+      z-index: 5;
+    }
+    
+    .slider-container {
+      padding: 1rem;
+      background-color: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+      margin-top: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    
+    .year-slider-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .play-btn {
+      background-color: var(--primary);
+      color: white;
+      border: none;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .play-btn:hover {
+      background-color: var(--dark);
+    }
+    
+    .year-slider {
+      flex-grow: 1;
+      position: relative;
+    }
+    
+    .slider-input {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 8px;
+      background: #d3d3d3;
+      outline: none;
+      border-radius: 4px;
+    }
+    
+    .slider-input::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--primary);
+      cursor: pointer;
+    }
+    
+    .slider-input::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--primary);
+      cursor: pointer;
+      border: none;
+    }
+    
+    .slider-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--medium);
+    }
+    
+    .year-display {
+      font-size: 1.5rem;
+      font-weight: bold;
+      text-align: center;
+      color: var(--primary);
+    }
+    
+    .prediction-badge {
+      background-color: var(--warning);
+      color: var(--dark);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+    
+    .tooltip {
+      position: absolute;
+      background-color: rgba(255, 255, 255, 0.95);
+      border-radius: 6px;
+      padding: 10px;
+      box-shadow: 0 3px 14px rgba(0, 0, 0, 0.15);
+      pointer-events: none;
+      z-index: 100;
+      max-width: 250px;
+      font-size: 0.9rem;
+    }
+    
+    .tooltip h4 {
+      margin-bottom: 5px;
+      font-size: 1rem;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 5px;
+    }
+    
+    .tooltip-value {
+      font-weight: bold;
+      float: right;
+    }
+    
+    .country-detail {
+      background-color: white;
+      border-radius: 8px;
+      padding: 1.25rem;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+      margin-top: 1rem;
+    }
+    
+    .country-detail-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+    
+    .country-detail-header h3 {
+      margin: 0;
+      display: flex;
+      align-items: center;
+    }
+    
+    .country-detail-header .close-btn {
+      background: none;
+      border: none;
+      font-size: 1.2rem;
+      cursor: pointer;
+      color: var(--medium);
+    }
+    
+    .close-btn:hover {
+      color: var(--danger);
+    }
+    
+    .country-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    
+    .stat-card {
+      padding: 0.75rem;
+      background-color: #f8f9fa;
+      border-radius: 6px;
+      text-align: center;
+    }
+    
+    .stat-value {
+      font-size: 1.5rem;
+      font-weight: bold;
+      margin-bottom: 0.25rem;
+    }
+    
+    .stat-label {
+      font-size: 0.8rem;
+      color: var(--medium);
+    }
+    
+    .factor-bars {
+      margin-top: 1rem;
+    }
+    
+    .factor-bar {
+      margin-bottom: 0.75rem;
+    }
+    
+    .factor-bar-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 0.25rem;
+    }
+    
+    .factor-bar-label {
+      font-size: 0.85rem;
+      color: var(--dark);
+    }
+    
+    .factor-bar-value {
+      font-size: 0.85rem;
+      font-weight: bold;
+    }
+    
+    .factor-bar-container {
+      height: 8px;
+      width: 100%;
+      background-color: #e9ecef;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    
+    .factor-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+    }
+    
+    .trend-chart-container {
+      height: 200px;
+      margin-top: 1rem;
+    }
+    
+    .map-legend {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      background-color: rgba(255, 255, 255, 0.9);
+      padding: 1rem;
+      border-radius: 8px;
+      box-shadow: 0 2px 15px rgba(0, 0, 0, 0.1);
+      z-index: 5;
+    }
+    
+    .legend-title {
+      font-size: 0.8rem;
+      margin-bottom: 0.5rem;
+      font-weight: bold;
+    }
+    
+    .legend-gradient {
+      position: relative;
+      height: 10px;
+      width: 200px;
+      border-radius: 5px;
+    }
+    
+    .legend-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.7rem;
+      margin-top: 4px;
+    }
+    
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(255, 255, 255, 0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    
+    .spinner {
+      border: 4px solid rgba(0, 0, 0, 0.1);
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border-left-color: var(--primary);
+      animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .comparison-panel {
+      background-color: white;
+      border-radius: 8px;
+      padding: 1.25rem;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+      margin-top: 1rem;
+    }
+    
+    .comparison-panel h3 {
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    
+    .comparison-countries {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    
+    .comparison-country {
+      padding: 0.5rem 1rem;
+      background-color: #f8f9fa;
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .comparison-color {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    
+    .comparison-remove {
+      background: none;
+      border: none;
+      color: var(--medium);
+      cursor: pointer;
+      font-size: 0.8rem;
+      margin-left: 0.5rem;
+    }
+    
+    .comparison-remove:hover {
+      color: var(--danger);
+    }
+    
+    .comparison-charts {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    
+    .chart-container {
+      height: 300px;
+    }
+    
+    .info-box {
+      background-color: rgba(76, 201, 240, 0.1);
+      border-left: 4px solid var(--info);
+      padding: 1rem;
+      border-radius: 4px;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+    }
+    
+    .info-item {
+      margin-bottom: 0.5rem;
+      font-size: 0.9rem;
+    }
+    
+    .debug-info {
+      margin-top: 1rem;
+      padding-top: 0.5rem;
+      border-top: 1px dashed #ccc;
+      font-size: 0.8rem;
+    }
+    
+    .text-xs {
+      font-size: 0.75rem;
+      margin-top: 0.25rem;
+    }
+    
+    .confidence {
+      font-size: 0.8rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-left: 5px;
+    }
+    
+    .confidence-high {
+      background-color: rgba(67, 170, 139, 0.2);
+      color: var(--success);
+    }
+    
+    .confidence-medium {
+      background-color: rgba(248, 150, 30, 0.2);
+      color: var(--warning);
+    }
+    
+    .confidence-low {
+      background-color: rgba(231, 111, 81, 0.2);
+      color: var(--danger);
+    }
+    
+    .search-box {
+      position: relative;
+      margin-bottom: 1rem;
+    }
+    
+    .search-input {
+      width: 100%;
+      padding: 0.5rem 0.75rem;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 0.9rem;
+    }
+    
+    .search-results {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background-color: white;
+      border: 1px solid #ddd;
+      border-radius: 0 0 6px 6px;
+      max-height: 200px;
+      overflow-y: auto;
+      z-index: 10;
+    }
+    
+    .search-result {
+      padding: 0.5rem 0.75rem;
+      cursor: pointer;
+      border-bottom: 1px solid #eee;
+    }
+    
+    .search-result:hover {
+      background-color: #f5f5f5;
+    }
+    
+    .search-result:last-child {
+      border-bottom: none;
+    }
+    
+    .toggle-group {
+      display: flex;
+      border-radius: 6px;
+      overflow: hidden;
+      border: 1px solid #ddd;
+      margin-bottom: 1rem;
+      min-height: 36px !important;
+      width: 100%; /* Ensure it takes full width */
+    }
+
+    .toggle-btn {
+      flex: 1;
+      padding: 0.5rem 1rem; /* Increased horizontal padding */
+      min-width: 120px; /* Ensure minimum width */
+      text-align: center;
+      background: #f8f9fa;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap; /* Prevent text wrapping */
+    }
+    
+    .toggle-btn.active {
+      background-color: var(--primary);
+      color: white;
+    }
+    
+    .toggle-btn:first-child {
+      border-right: 1px solid #ddd;
+    }
+    
+    .toggle-btn.temp.active {
+      background-color: var(--warm);
+    }
+    
+    .toggle-btn.prec.active {
+      background-color: var(--wet);
+    }
+    
+    .anomaly-stat {
+      color: var(--warm);
+    }
+    
+    .anomaly-negative {
+      color: var(--cool);
+    }
+    
+    .anomaly-neutral {
+      color: var(--neutral);
+    }
+    
+    .prec-wet {
+      color: var(--wet);
+    }
+    
+    .prec-dry {
+      color: var(--dry);
+    }
+    
+    .prec-normal {
+      color: var(--neutral);
+    }
+    
+    /* Media Queries */
+    @media (max-width: 1024px) {
+      .app-container {
+        grid-template-columns: 1fr;
+        grid-template-areas: 
+          "header"
+          "main"
+          "footer";
+      }
+      
+      .sidebar {
+        position: fixed;
+        left: -280px;
+        top: 0;
+        bottom: 0;
+        width: 280px;
+        transition: 0.3s;
+        z-index: 100;
+      }
+      
+      .sidebar.open {
+        left: 0;
+      }
+      
+      .menu-btn {
+        display: block !important;
+      }
+      
+      .sidebar-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(0, 0, 0, 0.5);
+        z-index: 99;
+        display: none;
+      }
+      
+      .sidebar-backdrop.show {
+        display: block;
+      }
+    }
+    
+    .menu-btn {
+      display: none;
+      background: none;
+      border: none;
+      color: white;
+      font-size: 1.5rem;
+      cursor: pointer;
+    }
+    
+    .close-sidebar {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      background: none;
+      border: none;
+      font-size: 1.2rem;
+      color: var(--medium);
+      cursor: pointer;
+      display: none;
+    }
+
+    .global-temp-container {
+      background-color: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+      padding: 1rem;
+      margin-bottom: 1rem;
+      text-align: center;
+    }
+
+    .global-temp-info {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .global-temp-title {
+      font-size: 1.2rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .global-temp-value {
+      font-size: 2rem;
+      font-weight: bold;
+      margin-bottom: 0.25rem;
+    }
+
+    .global-temp-label {
+      font-size: 0.9rem;
+      color: var(--medium);
+    }
+
+    .global-temp-high {
+      color: #e63946;
+    }
+
+    .global-temp-medium-high {
+      color: #f4a261;
+    }
+
+    .global-temp-medium {
+      color: #e9c46a;
+    }
+
+    .global-temp-low {
+      color: #2a9d8f;
+    }
+    
+    @media (max-width: 1024px) {
+      .close-sidebar {
+        display: block;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="loading-overlay" v-if="loading">
+      <div class="spinner"></div>
+      <div>Loading climate data...</div>
+      <div style="margin-top: 10px; font-size: 0.8rem; max-width: 400px; text-align: center;">
+        If you don't see data after upload, check the browser console (F12) for debugging information.
+      </div>
+    </div>
+    
+    <div class="app-container">
+      <header class="header">
+        <h1>
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path>
+          </svg>
+          Climate <span>Explorer</span>
+        </h1>
+        <button class="menu-btn" @click="toggleSidebar">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+      </header>
+      
+      <div class="sidebar-backdrop" :class="{ show: sidebarOpen }" @click="closeSidebar"></div>
+      
+      <div class="sidebar" :class="{ open: sidebarOpen }">
+        <button class="close-sidebar" @click="closeSidebar">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+        
+        <div class="control-section">
+          <h3>
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="16" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+            About the Model
+          </h3>
+<div class="info-box">
+  <p>This tool predicts global climate patterns through 2050 using advanced machine learning and statistical time series analysis on historical data (1901-2023).</p>
+  
+  <p style="margin-top: 12px;"><strong>Methodology:</strong></p>
+  <ul style="margin-top: 4px; padding-left: 18px;">
+    <li>Country-specific model selection: SARIMA, Gradient Boosting, and Prophet automatically optimized</li>
+    <li>Feature engineering: lagged values, rolling averages, seasonality, and trend decomposition</li>
+    <li>Regional climate clustering for pattern recognition and realistic variations</li>
+    <li>Best single model selected using grid search and performance metrics</li>
+    <li>Confidence intervals based on model performance and prediction horizon</li>
+  </ul>
+  
+  <p style="margin-top: 12px;"><strong>Tech Stack:</strong> Python, Pandas, NumPy, Scikit-learn, Prophet, Statsmodels, D3.js, Vue.js</p>
+  
+  <p style="margin-top: 12px;">Baseline reference: 1991-2020 for both temperature anomalies and precipitation percentages. Global temperature trends include estimates relative to pre-industrial baseline (1850-1900).</p>
+  <p style="margin-top: 12px;"><em>Note: While these statistical models capture historical patterns effectively, climate projections ideally require physics-based models incorporating atmospheric dynamics, ocean interactions, and greenhouse gas concentrations.</em></p>
+</div>
+        </div>
+        
+        <div class="control-section">
+          <h3>
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            Search Countries
+          </h3>
+          <div class="search-box">
+            <input 
+              type="text" 
+              class="search-input" 
+              placeholder="Enter country name..." 
+              v-model="searchQuery" 
+              @focus="showSearchResults = true"
+              @blur="setTimeout(() => showSearchResults = false, 200)"
+            >
+            <div class="search-results" v-if="showSearchResults && filteredCountries.length > 0">
+              <div 
+                v-for="country in filteredCountries" 
+                :key="country" 
+                class="search-result"
+                @click="selectCountry(country)"
+              >
+                {{ country }}
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="control-section">
+          <h3>
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            </svg>
+            Data Information
+          </h3>
+          <div>
+            <div class="info-item">
+              <strong>Years:</strong> {{ minYear }} - {{ maxYear }}
+            </div>
+            <div class="info-item">
+              <strong>Prediction starts:</strong> {{ predictionStartYear }}
+            </div>
+            <div class="info-item">
+              <strong>Baseline period:</strong> 1991-2020
+            </div>
+            <div class="info-item" v-if="selectedVariable === 'temperature'">
+              <strong>Anomaly range:</strong> {{ globalMinScore.toFixed(1) }}°C to {{ globalMaxScore.toFixed(1) }}°C
+            </div>
+            <div class="info-item" v-else>
+              <strong>% of normal range:</strong> {{ globalMinScore.toFixed(0) }}% to {{ globalMaxScore.toFixed(0) }}%
+            </div>
+            <div class="info-item">
+              <strong>Countries:</strong> {{ countries.length }}
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <main class="main-content">
+
+
+<div class="global-temp-container" v-if="selectedVariable === 'temperature'">
+<div class="global-temp-info">
+
+  <div class="global-temp-title">Global Temperature {{ selectedYear }}</div>
+
+  <div class="global-temp-value" :class="getGlobalTempClass()">
+
+    {{ getGlobalTemp() }}°C
+
+  </div>
+
+  <div class="global-temp-label">above pre-industrial levels</div>
+
+</div>
+
+</div>
+
+<div class="global-temp-container" v-if="selectedVariable === 'precipitation'">
+  <div class="global-temp-info">
+    <div class="global-temp-title">Global Precipitation {{ selectedYear }}</div>
+    <div class="global-temp-value">
+      {{ getGlobalPrecipInfo().globalAvg }}%
+    </div>
+    <div class="global-temp-label">of normal (baseline avg: {{ getGlobalPrecipInfo().globalBase }}%)</div>
+    
+    <div style="margin-top: 15px; display: flex; justify-content: center; gap: 20px;">
+      <div class="prec-stat" style="background-color: rgba(231, 76, 60, 0.1); padding: 5px 15px; border-radius: 12px;">
+        <span style="font-weight: bold; color: #e74c3c; font-size: 1.2rem;">{{ getGlobalPrecipInfo().muchdrier }}</span>
+        <span style="color: #e74c3c; margin-left: 5px;">much drier</span>
+      </div>
+      
+      <div class="prec-stat" style="background-color: rgba(41, 98, 255, 0.1); padding: 5px 15px; border-radius: 12px;">
+        <span style="font-weight: bold; color: #2962ff; font-size: 1.2rem;">{{ getGlobalPrecipInfo().muchwetter }}</span>
+        <span style="color: #2962ff; margin-left: 5px;">much wetter</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+          <div class="toggle-group">
+            <button 
+              class="toggle-btn temp" 
+              :class="{ active: selectedVariable === 'temperature' }"
+              @click="selectedVariable = 'temperature'"
+            >
+              Temperature
+            </button>
+            <button 
+              class="toggle-btn prec" 
+              :class="{ active: selectedVariable === 'precipitation' }"
+              :disabled="isPredictionYear(selectedYear)"
+              @click="!isPredictionYear(selectedYear) && (selectedVariable = 'precipitation')"
+              :style="isPredictionYear(selectedYear) ? 'opacity: 0.5; cursor: not-allowed;' : ''"
+            >
+              Precipitation
+              <span v-if="isPredictionYear(selectedYear)" style="font-size: 0.7rem; margin-left: 5px;">
+                (historical only)
+              </span>
+            </button>
+          </div>
+
+        <div class="map-container">
+          <svg class="map-svg" ref="mapSvg"></svg>
+          
+          <div class="tooltip" ref="tooltip" style="display: none;"></div>
+          
+          <div class="map-legend">
+            <div class="legend-title">
+              {{ selectedVariable === 'temperature' ? 'Temperature Anomaly (°C)' : 'Precipitation (% of normal)' }}
+            </div>
+            <div class="legend-gradient" :style="getLegendGradientStyle()"></div>
+            <div class="legend-labels">
+              <div v-if="selectedVariable === 'temperature'">
+                {{ globalMinScore.toFixed(1) }}°C
+              </div>
+              <div v-else>
+                Dry <span style="color: #bf812d; opacity: 0.7;">(50%)</span>
+              </div>
+              
+              <div v-if="selectedVariable === 'temperature'">
+                0°C
+              </div>
+              <div v-else>
+                Normal <span style="color: #666;">(100%)</span>
+              </div>
+              
+              <div v-if="selectedVariable === 'temperature'">
+                {{ globalMaxScore.toFixed(1) }}°C
+              </div>
+              <div v-else>
+                Wet <span style="color: #35978f; opacity: 0.7;">(150%)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      
+        <div class="slider-container">
+          <div class="year-display">
+            {{ selectedYear }}
+            <span v-if="isPredictionYear(selectedYear)" class="prediction-badge">Forecast</span>
+          </div>
+          <div class="year-slider-controls">
+            <button class="play-btn" @click="togglePlayTimeline">
+              <svg v-if="!isPlaying" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+              <svg v-else xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="6" y="4" width="4" height="16"></rect>
+                <rect x="14" y="4" width="4" height="16"></rect>
+              </svg>
+            </button>
+            <div class="year-slider">
+              <input 
+                type="range" 
+                class="slider-input" 
+                :min="minYear" 
+                :max="maxYear" 
+                v-model.number="selectedYear" 
+                :style="getSliderBackgroundStyle()"
+              >
+              <div class="slider-labels">
+                <span>{{ minYear }}</span>
+                <span>{{ predictionStartYear }}</span>
+                <span>{{ maxYear }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="country-detail" v-if="selectedCountry">
+          <div class="country-detail-header">
+            <h3>
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2">
+                <path d="M20.59 13a9 9 0 1 1-13-13"></path>
+                <path d="M7.5 10.5 12 5l-8 1 1 8 4.5-4.5"></path>
+                <path d="M17 17v5"></path>
+                <path d="M14 17h6"></path>
+              </svg>
+              {{ selectedCountry }}
+<span v-if="isPredictionYear(selectedYear)" style="font-size: 0.8rem; color: #666; margin-left: 10px;">
+  ({{ getCountryFactorValue(selectedCountry, 'model').replace('temp:', '') }})
+</span>
+            </h3>
+            <button class="close-btn" @click="selectedCountry = null">×</button>
+          </div>
+          
+          <div class="country-stats">
+            <div class="stat-card" v-if="selectedVariable === 'temperature'">
+              <div class="stat-value" :class="getAnomalyClass(getCountryFactorValue(selectedCountry, 'temp_anomaly'))">
+                {{ getCountryFactorValue(selectedCountry, 'temp_anomaly').toFixed(2) }}°C
+              </div>
+              <div class="stat-label">Temperature Anomaly</div>
+            </div>
+            <div class="stat-card" v-if="selectedVariable === 'temperature'">
+              <div class="stat-value">
+                {{ getCountryFactorValue(selectedCountry, 'temperature').toFixed(1) }}°C
+              </div>
+              <div class="stat-label">Actual Temperature</div>
+            </div>
+
+<div class="stat-card" v-if="isPredictionYear(selectedYear) && selectedVariable === 'temperature' && getCountryFactorValue(selectedCountry, 'interval_width') !== 0">
+<div class="stat-value">
+  ±{{ getCountryFactorValue(selectedCountry, 'interval_width').toFixed(1) }}°C
+</div>
+  <div class="stat-label">Confidence Interval</div>
+</div>
+
+            
+            <div class="stat-card" v-if="selectedVariable === 'precipitation'">
+              <div class="stat-value" :class="getPrecipitationClass(getCountryFactorValue(selectedCountry, 'prec_percent'))">
+                {{ getCountryFactorValue(selectedCountry, 'prec_percent').toFixed(0) }}%
+              </div>
+              <div class="stat-label">% of Normal</div>
+            </div>
+            <div class="stat-card" v-if="selectedVariable === 'precipitation'">
+              <div class="stat-value">
+                {{ getCountryFactorValue(selectedCountry, 'precipitation').toFixed(0) }} mm
+              </div>
+              <div class="stat-label">Annual Precipitation</div>
+            </div>
+        
+        </div>
+      </main>
+      
+      <footer class="footer">
+        <div>© 2025 Climate Explorer | Based on CRU TS historical climate data from World Bank</div>
+      </footer>
+    </div>
+  </div>
+  
+  <script>
+    const app = Vue.createApp({
+      data() {
+        return {
+          DEBUG: false,
+          loading: true,
+          data: [],
+          countries: [],
+          worldData: null,
+          minYear: 1901,
+          maxYear: 2050,
+          predictionStartYear: 2024,
+          selectedYear: 2020,
+          selectedVariable: 'temperature', 
+          selectedCountry: null,
+          showNoDataOverlay: false,
+          sidebarOpen: false,
+          searchQuery: '',
+          showSearchResults: false,
+          isPlaying: false,
+          playInterval: null,
+          globalMinScore: -2, 
+          globalMaxScore: 2, 
+          globalPrecipCache: {},
+          maps: {
+            zoom: null,
+            tooltip: null,
+            trendChart: null
+          }
+        }
+      },
+      
+      computed: {
+        filteredCountries() {
+          if (!this.searchQuery) return [];
+          
+          const query = this.searchQuery.toLowerCase();
+          return this.countries.filter(country => 
+            country.toLowerCase().includes(query)
+          ).slice(0, 10);
+        },
+        
+        noDataCountries() {
+          if (!this.data.length) return [];
+          
+          const countriesWithData = new Set(
+            this.data
+              .filter(d => d.year === this.selectedYear)
+              .map(d => d.country)
+          );
+          
+          return this.countries.filter(country => !countriesWithData.has(country));
+        }
+      },
+      
+      methods: {
+        async loadData() {
+          try {
+            this.loading = true;
+            
+            const mapResponse = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json');
+            this.worldData = await mapResponse.json();
+            
+            try {
+              await this.loadCsvData('climate_with_predictions.csv');
+            } catch (e) {
+              console.warn('Could not load CSV from standard path, trying to load via upload');
+              this.loading = false;
+              
+              this.setupFileUpload();
+              return;
+            }
+            
+          } catch (error) {
+            console.error('Error loading data:', error);
+            alert('Error loading data. Please check the console for more details.');
+          } finally {
+            this.loading = false;
+          }
+        },
+        
+        async loadCsvData(source) {
+          let csvText;
+          
+          if (typeof source === 'string') {
+            const response = await fetch(source);
+            csvText = await response.text();
+          } else if (source instanceof File) {
+            csvText = await this.readFileAsText(source);
+          } else {
+            throw new Error('Invalid source for CSV data');
+          }
+          
+          return new Promise((resolve, reject) => {
+            Papa.parse(csvText, {
+              header: true,
+              dynamicTyping: true,
+              skipEmptyLines: true,
+              complete: (results) => {
+                if (results.errors.length > 0) {
+                  console.warn('CSV parse errors:', results.errors);
+                }
+                
+                this.processData(results.data);
+                resolve(results.data);
+              },
+              error: (error) => {
+                reject(error);
+              }
+            });
+          });
+        },
+        
+        debugCountryMapping() {
+          console.log("=== TopoJSON Countries ===");
+          const topo_countries = this.worldData.objects.countries.geometries.map(g => ({
+            id: g.id,
+            name: g.properties?.name || `Unknown (${g.id})`
+          }));
+          
+          console.log("=== Dataset Countries ===");
+          const dataset_countries = [...new Set(this.data.map(d => d.country))].map(country => {
+            const code = this.data.find(d => d.country === country)?.code;
+            return { country, code };
+          });
+        },
+
+        readFileAsText(file) {
+          return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target.result);
+            reader.onerror = (e) => reject(e);
+            reader.readAsText(file);
+          });
+        },
+        
+        setupFileUpload() {
+          const fileInput = document.createElement('input');
+          fileInput.type = 'file';
+          fileInput.accept = '.csv';
+          fileInput.style.display = 'none';
+          document.body.appendChild(fileInput);
+          
+          fileInput.addEventListener('change', async (e) => {
+            if (e.target.files.length > 0) {
+              this.loading = true;
+              try {
+                await this.loadCsvData(e.target.files[0]);
+                document.body.removeChild(fileInput);
+              } catch (error) {
+                console.error('Error loading uploaded file:', error);
+                alert('Error loading file. Please check if it\'s a valid CSV file.');
+              } finally {
+                this.loading = false;
+              }
+            }
+          });
+          
+          fileInput.click();
+        },
+        
+        processData(data) {
+          const processedData = data.map(item => {
+            let score = null;
+            
+            if (item.temp_anomaly !== undefined) {
+                score = item.temp_anomaly;
+            } else if (item.prec_percent !== undefined) {
+                score = item.prec_percent;
+            }
+            
+            return {
+              code: item.code,
+              country: item.country,
+              year: item.year,
+              temperature: item.temperature,
+              temp_anomaly: item.temp_anomaly,
+              precipitation: item.precipitation,
+              prec_percent: item.prec_percent,
+              temp_lower: item.temp_lower,
+              temp_upper: item.temp_upper,
+              interval_width: item.interval_width,
+              score: score,
+              model: item.model || '',
+              prediction_confidence: item.prediction_confidence || null
+            };
+          });
+          
+          const years = [...new Set(processedData.map(d => d.year))].sort((a, b) => a - b);
+          if (years.length > 0) {
+            this.minYear = years[0];
+            this.maxYear = years[years.length - 1];
+            
+            this.predictionStartYear = 2024;
+            console.log(`Set prediction start year to ${this.predictionStartYear}`);
+            
+            this.selectedYear = 1901;
+          }
+          
+          this.updateGlobalMinMax(processedData);
+          
+          this.countries = [...new Set(processedData.map(d => d.country))].sort();
+          
+          this.data = processedData;
+          
+          this.initMap();
+          this.updateMapColors();
+
+          this.$nextTick(() => {
+            this.updateMapColors();
+            console.log("Map colors updated after data processing");
+          });
+        },
+        
+        updateGlobalMinMax(data) {
+            let values;
+            
+            if (this.selectedVariable === 'temperature') {
+                values = data
+                    .map(d => d.temp_anomaly)
+                    .filter(v => v !== undefined && v !== null && !isNaN(v));
+                    
+                if (values.length > 0) {
+                    this.globalMinScore = Math.min(-2, Math.floor(Math.min(...values) * 10) / 10);
+                    this.globalMaxScore = Math.max(2, Math.ceil(Math.max(...values) * 10) / 10);
+                } else {
+                    this.globalMinScore = -2;
+                    this.globalMaxScore = 2;
+                }
+            } else {
+                values = data
+                    .map(d => d.prec_percent)
+                    .filter(v => v !== undefined && v !== null && !isNaN(v));
+                    
+                if (values.length > 0) {
+                    this.globalMinScore = Math.min(50, Math.floor(Math.min(...values) / 5) * 5);
+                    this.globalMaxScore = Math.max(150, Math.ceil(Math.max(...values) / 5) * 5);
+                } else {
+                    this.globalMinScore = 50;
+                    this.globalMaxScore = 150;
+                }
+            }
+            
+            console.log(`Global ${this.selectedVariable} range: ${this.globalMinScore.toFixed(1)} to ${this.globalMaxScore.toFixed(1)}`);
+        },
+        
+        initMap() {
+          if (!this.worldData) return;
+          
+          const svgElement = this.$refs.mapSvg;
+          const width = svgElement.clientWidth;
+          const height = svgElement.clientHeight;
+          
+          d3.select(svgElement).selectAll('*').remove();
+          
+           const svg = d3.select(svgElement)
+            .attr('width', width)
+            .attr('height', height);
+            
+           const g = svg.append('g');
+          
+           const projection = d3.geoNaturalEarth1()
+            .scale((width) / (2 * Math.PI))
+            .translate([width / 2, height / 2]);
+            
+           const path = d3.geoPath().projection(projection);
+          
+           const countries = topojson.feature(this.worldData, this.worldData.objects.countries);
+          
+           g.selectAll('path')
+            .data(countries.features)
+            .enter()
+            .append('path')
+            .attr('class', 'country')
+            .attr('d', path)
+            .attr('data-name', d => this.getCountryNameFromId(d.id))
+            .on('mouseover', (event, d) => this.showTooltip(event, d))
+            .on('mouseout', () => this.hideTooltip())
+            .on('click', (event, d) => this.handleCountryClick(d));
+            
+          const zoom = d3.zoom()
+            .scaleExtent([1, 8])
+            .on('zoom', (event) => {
+              g.attr('transform', event.transform);
+            });
+            
+          svg.call(zoom);
+          
+          this.maps.zoom = zoom;
+          
+          this.maps.tooltip = d3.select(this.$refs.tooltip);
+
+          if (DEBUG) {
+            this.debugCountryMapping();
+          }
+        },
+        
+        getColorForTemperatureAnomaly(anomaly) {
+          if (anomaly === null || anomaly === undefined || isNaN(anomaly)) {
+            return '#e5e7eb';  
+          }
+          
+          const stops = [
+            { value: this.globalMinScore, color: '#053061' }, 
+            { value: -1.5, color: '#2166ac' },           
+            { value: -1, color: '#4393c3' },                
+            { value: -0.5, color: '#92c5de' },             
+            { value: -0.25, color: '#d1e5f0' },          
+            { value: 0, color: '#f7cb45' },                  
+            { value: 0.25, color: '#fddbc7' },        
+            { value: 0.5, color: '#f4a582' },             
+            { value: 1, color: '#d6604d' },                  
+            { value: 1.5, color: '#b2182b' },                
+            { value: this.globalMaxScore, color: '#67001f' }
+          ];
+          
+          for (let i = 0; i < stops.length - 1; i++) {
+            if (anomaly <= stops[i+1].value) {
+              const t = (anomaly - stops[i].value) / (stops[i+1].value - stops[i].value);
+              return this.interpolateColor(stops[i].color, stops[i+1].color, t);
+            }
+          }
+          
+          return stops[stops.length - 1].color;
+        },
+
+getConfidenceIntervalWidth(country) {
+  const countryData = this.data.find(d => 
+    d.country === country && d.year === this.selectedYear
+  );
+  
+  if (countryData && countryData.interval_width !== undefined && countryData.interval_width !== null) {
+    return countryData.interval_width.toFixed(1);
+  }
+  
+  return null;
+},
+        
+getColorForPrecipitationPercent(percent) {
+  if (percent === null || percent === undefined || isNaN(percent)) {
+    return '#e5e7eb';
+  }
+  
+  const normalMin = 97;
+  const normalMax = 103;
+  
+  if (percent >= normalMin && percent <= normalMax) {
+    const t = (percent - normalMin) / (normalMax - normalMin);
+    return this.interpolateColor('#f0f0f0', '#e8e8e8', t);
+  } 
+  else if (percent < normalMin) {
+    if (percent < 50) {
+      const stops = [
+        { value: 0, color: '#8c510a' },   
+        { value: 25, color: '#bf812d' },   
+        { value: 50, color: '#dfc27d' } 
+      ];
+      
+      for (let i = 0; i < stops.length - 1; i++) {
+        if (percent <= stops[i+1].value) {
+          const t = (percent - stops[i].value) / (stops[i+1].value - stops[i].value);
+          return this.interpolateColor(stops[i].color, stops[i+1].color, t);
+        }
+      }
+    } else {
+      const stops = [
+        { value: 50, color: '#dfc27d' }, 
+        { value: 80, color: '#f6e8c3' }, 
+        { value: normalMin, color: '#f0f0f0' } 
+      ];
+      
+      for (let i = 0; i < stops.length - 1; i++) {
+        if (percent <= stops[i+1].value) {
+          const t = (percent - stops[i].value) / (stops[i+1].value - stops[i].value);
+          return this.interpolateColor(stops[i].color, stops[i+1].color, t);
+        }
+      }
+    }
+  } 
+  else {
+    if (percent > 150) {
+      const stops = [
+        { value: 150, color: '#80cdc1' }, 
+        { value: 175, color: '#35978f' },
+        { value: 200, color: '#01665e' }  
+      ];
+      
+      for (let i = 0; i < stops.length - 1; i++) {
+        if (percent <= stops[i+1].value) {
+          const t = (percent - stops[i].value) / (stops[i+1].value - stops[i].value);
+          return this.interpolateColor(stops[i].color, stops[i+1].color, t);
+        }
+      }
+    } else {
+      const stops = [
+        { value: normalMax, color: '#e8e8e8' }, 
+        { value: 120, color: '#c7eae5' }, 
+        { value: 150, color: '#80cdc1' }  
+      ];
+      
+      for (let i = 0; i < stops.length - 1; i++) {
+        if (percent <= stops[i+1].value) {
+          const t = (percent - stops[i].value) / (stops[i+1].value - stops[i].value);
+          return this.interpolateColor(stops[i].color, stops[i+1].color, t);
+        }
+      }
+    }
+  }
+  
+  return '#e8e8e8'; 
+},
+
+getGlobalPrecipInfo() {
+  const yearData = this.data.filter(d => d.year === this.selectedYear && d.code !== 'GLOBAL');
+  
+  if (!yearData.length) {
+    return { globalAvg: '0', muchwetter: 0, muchdrier: 0 };
+  }
+  
+  const globalBaselineAvg = this.getGlobalBaselineAverage();
+  const currentYearAvg = yearData.reduce((sum, d) => sum + (d.prec_percent || 0), 0) / yearData.length;
+  
+  const muchwetter = yearData.filter(d => d.prec_percent > globalBaselineAvg * 1.5).length;
+  const muchdrier = yearData.filter(d => d.prec_percent < globalBaselineAvg * 0.5).length;
+  
+  return {
+    globalAvg: currentYearAvg.toFixed(0),
+    globalBase: globalBaselineAvg.toFixed(0),
+    muchwetter,
+    muchdrier
+  };
+},
+        
+        interpolateColor(color1, color2, t) {
+            const r1 = parseInt(color1.substring(1, 3), 16);
+            const g1 = parseInt(color1.substring(3, 5), 16);
+            const b1 = parseInt(color1.substring(5, 7), 16);
+            
+            const r2 = parseInt(color2.substring(1, 3), 16);
+            const g2 = parseInt(color2.substring(3, 5), 16);
+            const b2 = parseInt(color2.substring(5, 7), 16);
+            
+            const r = Math.round(r1 + (r2 - r1) * t);
+            const g = Math.round(g1 + (g2 - g1) * t);
+            const b = Math.round(b1 + (b2 - b1) * t);
+            
+            return `#${(r).toString(16).padStart(2, '0')}${(g).toString(16).padStart(2, '0')}${(b).toString(16).padStart(2, '0')}`;
+        },
+        
+        getColorForValue(value) {
+            if (this.selectedVariable === 'temperature') {
+                return this.getColorForTemperatureAnomaly(value);
+            } else {
+                return this.getColorForPrecipitationPercent(value);
+            }
+        },
+        
+        getGlobalTemp() {
+          const globalData = this.data.find(d => 
+            d.code === 'GLOBAL' && d.year === this.selectedYear
+          );
+          
+          if (globalData) {
+            if (globalData.global_avg !== undefined && globalData.global_avg !== null) {
+              return globalData.global_avg.toFixed(1);
+            } else if (globalData.temp_anomaly !== undefined && globalData.temp_anomaly !== null) {
+              return (globalData.temp_anomaly + 0.7).toFixed(1);
+            }
+          }
+          return 'N/A';
+        },
+
+        getGlobalTempClass() {
+          const temp = this.getGlobalTemp();
+          if (temp === 'N/A') return '';
+          const tempValue = parseFloat(temp);
+          if (tempValue >= 2.0) return 'global-temp-high';
+          if (tempValue >= 1.5) return 'global-temp-medium-high';
+          if (tempValue >= 1.0) return 'global-temp-medium';
+          return 'global-temp-low';
+        },
+
+        updateMapColors() {
+          if (!this.worldData || !this.data.length) return;
+          
+          const yearData = this.data.filter(d => d.year === this.selectedYear);
+          
+          const countryValues = {};
+          yearData.forEach(d => {
+            if (this.selectedVariable === 'temperature') {
+              countryValues[d.country] = d.temp_anomaly;
+            } else {
+              countryValues[d.country] = d.prec_percent;
+            }
+          });
+          
+          d3.selectAll('.country')
+            .attr('fill', d => {
+              const countryName = this.getCountryNameFromId(d.id);
+              
+              return countryValues[countryName] !== undefined ? 
+                this.getColorForValue(countryValues[countryName]) : 
+                '#d0d0d0'; 
+            })
+            .classed('selected', d => {
+              const countryName = this.getCountryNameFromId(d.id);
+              return this.selectedCountry === countryName;
+            });
+        },
+        
+        getLegendGradientStyle() {
+          let gradient;
+          
+          if (this.selectedVariable === 'temperature') {
+            gradient = `linear-gradient(to right, 
+              ${this.getColorForTemperatureAnomaly(this.globalMinScore)}, 
+              ${this.getColorForTemperatureAnomaly(-1)},
+              ${this.getColorForTemperatureAnomaly(-0.5)},
+              ${this.getColorForTemperatureAnomaly(0)},
+              ${this.getColorForTemperatureAnomaly(0.5)},
+              ${this.getColorForTemperatureAnomaly(1)},
+              ${this.getColorForTemperatureAnomaly(this.globalMaxScore)})`;
+          } else {
+            gradient = `linear-gradient(to right, 
+              ${this.getColorForPrecipitationPercent(50)}, 
+              ${this.getColorForPrecipitationPercent(100)}, 
+              ${this.getColorForPrecipitationPercent(150)})`;
+          }
+          
+          return { background: gradient };
+        },
+        
+        getAnomalyClass(anomaly) {
+            if (anomaly === null || anomaly === undefined) return '';
+            if (anomaly > 0.5) return 'anomaly-stat'; 
+            if (anomaly < -0.5) return 'anomaly-negative';
+            return 'anomaly-neutral';
+        },
+        
+        getPrecipitationClass(percent) {
+            if (percent === null || percent === undefined) return '';
+            if (percent > 110) return 'prec-wet'; 
+            if (percent < 90) return 'prec-dry';
+            return 'prec-normal'; 
+        },
+       
+getGlobalBaselineAverage() {
+  if (this.globalBaselineAverage) {
+    return this.globalBaselineAverage;
+  }
+  
+  const baselineData = this.data.filter(d => 
+    d.year >= 1991 && 
+    d.year <= 2020 && 
+    d.code !== 'GLOBAL' &&
+    d.prec_percent !== null
+  );
+  
+  if (!baselineData.length) {
+    this.globalBaselineAverage = 100; 
+    return 100;
+  }
+  
+  const globalAvg = baselineData.reduce((sum, d) => sum + d.prec_percent, 0) / baselineData.length;
+  this.globalBaselineAverage = globalAvg;
+  
+  return globalAvg;
+},
+
+
+showTooltip(event, d) {
+  const countryName = this.getCountryNameFromId(d.id);
+  
+  const countryData = this.data.find(item => 
+    item.country === countryName && item.year === this.selectedYear
+  );
+  
+  let html = `<h4>${countryName}</h4>`;
+  
+  if (countryData) {
+    if (this.selectedVariable === 'temperature') {
+      const anomalyClass = this.getAnomalyClass(countryData.temp_anomaly);
+      html += `<p>Temperature: <span class="tooltip-value">${countryData.temperature?.toFixed(1)}°C</span></p>`;
+      html += `<p>Anomaly: <span class="tooltip-value ${anomalyClass}">${countryData.temp_anomaly?.toFixed(2)}°C</span></p>`;
+    } else {
+      const precClass = this.getPrecipitationClass(countryData.prec_percent);
+      html += `<p>Precipitation: <span class="tooltip-value">${countryData.precipitation?.toFixed(0)} mm</span></p>`;
+      html += `<p>% of Normal: <span class="tooltip-value ${precClass}">${countryData.prec_percent?.toFixed(0)}%</span></p>`;
+    }
+  }
+  
+  this.maps.tooltip
+    .style('display', 'block')
+    .style('left', (event.clientX - 220) + 'px')
+    .style('top', (event.clientY - 350) + 'px')
+    .html(html);
+},
+        
+        hideTooltip() {
+          this.maps.tooltip.style('display', 'none');
+        },
+        
+        handleCountryClick(d) {
+          const countryName = this.getCountryNameFromId(d.id);
+          
+          const hasData = this.data.some(item => 
+            item.country === countryName && item.year === this.selectedYear
+          );
+          
+          if (!hasData) {
+            return;
+          }
+          
+          this.selectedCountry = this.selectedCountry === countryName ? null : countryName;
+          
+          
+          this.updateMapColors();
+        },
+        
+getCountryNameFromId(id) {
+  if (['348', '732', '158', '688'].includes(id)) {
+    console.log(`Debug country mapping: ID=${id}`);
+  }
+  
+  const countryMapping = {
+    '840': 'United States of America',
+    '276': 'Germany',
+    '250': 'France',
+    '826': 'United Kingdom',
+    '724': 'Spain',
+    '380': 'Italy',
+    '156': 'China',
+    '392': 'Japan',
+    '356': 'India',
+    '124': 'Canada',
+    '036': 'Australia',
+    '643': 'Russian Federation',
+    '076': 'Brazil',
+    
+    '410': 'Republic of Korea',    
+    '408': 'D. P. R. of Korea',     
+    '116': 'Cambodia',             
+    '418': 'Lao People\'s Democratic Republic',  
+    '792': 'Türkiye',             
+    '203': 'Czech Republic',      
+    '158': 'Taiwan, China',        
+    '140': 'Central African Republic',
+    '732': 'Morocco',            
+    '417': 'Kyrgyz Republic',
+    '348': 'Hungary',              
+    '703': 'Hungary',              
+    '070': 'Bosnia and Herzegovina',
+    '688': 'Serbia',             
+    
+    '344': 'Hong Kong, SAR',
+    '446': 'Macau, SAR',
+    '204': 'Benin',
+    '180': 'Democratic Republic of Congo',
+    '384': 'Côte d\'Ivoire',
+    '710': 'South Africa',
+    '894': 'Zambia',
+    '716': 'Zimbabwe',
+    '108': 'Burundi',
+    '148': 'Chad',
+    '174': 'Comoros',
+    '178': 'Congo',
+    '262': 'Djibouti',
+    '818': 'Arab Republic of Egypt',
+    '226': 'Equatorial Guinea',
+    '232': 'Eritrea',
+    '231': 'Ethiopia',
+    '266': 'Gabon',
+    '270': 'Gambia',              
+    '288': 'Ghana',
+    '324': 'Guinea',
+    '624': 'Guinea-Bissau',
+    '404': 'Kenya',
+    '426': 'Lesotho',
+    '430': 'Liberia',
+    '434': 'Libya',
+    '450': 'Madagascar',
+    '454': 'Malawi',
+    '466': 'Mali',
+    '478': 'Mauritania',
+    '480': 'Mauritius',
+    '504': 'Morocco',
+    '508': 'Mozambique',
+    '516': 'Namibia',
+    '562': 'Niger',
+    '566': 'Nigeria',
+    '638': 'Réunion',
+    '646': 'Rwanda',
+    '686': 'Senegal',
+    '690': 'Seychelles',
+    '694': 'Sierra Leone',
+    '706': 'Somalia',
+    '728': 'South Sudan',
+    '729': 'Sudan',
+    '748': 'Eswatini',
+    '834': 'Tanzania',
+    '768': 'Togo',
+    '788': 'Tunisia',
+    '800': 'Uganda'
+  };
+  
+  const name = countryMapping[id];
+  
+  if (!name) {
+    const topojsonCountry = this.worldData.objects.countries.geometries.find(g => g.id === id);
+    if (topojsonCountry && topojsonCountry.properties && topojsonCountry.properties.name) {
+      const topoName = topojsonCountry.properties.name;
+      
+      const exactMatch = this.countries.find(c => c === topoName);
+      if (exactMatch) return exactMatch;
+      
+      const closeMatch = this.countries.find(c => 
+        c.toLowerCase().includes(topoName.toLowerCase()) || 
+        topoName.toLowerCase().includes(c.toLowerCase())
+      );
+      
+      if (!closeMatch) {
+      }
+      
+      if (closeMatch) return closeMatch;
+    }
+  }
+  
+  return name || `Country ${id}`;
+},
+        
+        countPredictionsForYear(year) {
+          if (!this.data.length) return 0;
+          return this.data.filter(d => 
+            d.year === year && 
+            ((this.selectedVariable === 'temperature' && d.temp_anomaly !== undefined) ||
+             (this.selectedVariable === 'precipitation' && d.prec_percent !== undefined)) &&
+            d.model && d.model !== ''
+          ).length;
+        },
+
+        debugConfidenceData(country) {
+  const countryData = this.data.find(d => 
+    d.country === country && d.year === this.selectedYear
+  );
+  console.log('Confidence debug:', countryData);
+  return countryData;
+},
+
+        debugCountryMapping() {
+  console.log("=== TopoJSON Countries ===");
+  const topo_countries = this.worldData.objects.countries.geometries.map(g => ({
+    id: g.id,
+    name: g.properties?.name || `Unknown (${g.id})`
+  }));
+  console.log(topo_countries);
+  
+  console.log("=== Dataset Countries ===");
+  const dataset_countries = [...new Set(this.data.map(d => d.country))].map(country => {
+    const code = this.data.find(d => d.country === country)?.code;
+    return { country, code };
+  });
+  console.log(dataset_countries);
+},
+        
+        getYearMinScore(year) {
+          if (!this.data.length) return 0;
+          
+          const yearData = this.data.filter(d => d.year === year);
+          
+          if (this.selectedVariable === 'temperature') {
+              const values = yearData
+                .map(d => d.temp_anomaly)
+                .filter(v => v !== undefined && v !== null && !isNaN(v));
+              
+              return values.length > 0 ? Math.min(...values) : 0;
+          } else {
+              const values = yearData
+                .map(d => d.prec_percent)
+                .filter(v => v !== undefined && v !== null && !isNaN(v));
+              
+              return values.length > 0 ? Math.min(...values) : 0;
+          }
+        },
+        
+        getYearMaxScore(year) {
+          if (!this.data.length) return 0;
+          
+          const yearData = this.data.filter(d => d.year === year);
+          
+          if (this.selectedVariable === 'temperature') {
+              const values = yearData
+                .map(d => d.temp_anomaly)
+                .filter(v => v !== undefined && v !== null && !isNaN(v));
+              
+              return values.length > 0 ? Math.max(...values) : 0;
+          } else {
+              const values = yearData
+                .map(d => d.prec_percent)
+                .filter(v => v !== undefined && v !== null && !isNaN(v));
+              
+              return values.length > 0 ? Math.max(...values) : 0;
+          }
+        },
+        
+        selectCountry(country) {
+          const hasData = this.data.some(item => 
+            item.country === country && item.year === this.selectedYear
+          );
+          
+          if (!hasData) {
+            console.log(`No data for ${country} in ${this.selectedYear}`);
+            return;
+          }
+          
+          this.selectedCountry = country;
+          
+          
+          this.searchQuery = '';
+          
+          this.updateMapColors();
+          
+          this.closeSidebar();
+        },
+        
+        
+        getCountryFactorValue(country, factorId) {
+          const countryData = this.data.find(d => 
+            d.country === country && d.year === this.selectedYear
+          );
+          
+          return countryData ? countryData[factorId] || 0 : 0;
+        },
+        
+        getCountryPredictionConfidence(country) {
+          const countryData = this.data.find(d => 
+            d.country === country && d.year === this.selectedYear
+          );
+          
+          return countryData ? countryData.prediction_confidence : null;
+        },
+        
+        isPredictionYear(year) {
+          return year >= this.predictionStartYear;
+        },
+        
+getSliderBackgroundStyle() {
+  const totalYears = this.maxYear - this.minYear;
+  const predictionYears = this.maxYear - this.predictionStartYear + 1;
+  const predictionPercentage = (predictionYears / totalYears) * 100;
+  const predictionStart = ((this.predictionStartYear - this.minYear) / totalYears) * 100;
+  
+  console.log(`Slider debug: minYear=${this.minYear}, maxYear=${this.maxYear}, predictionStartYear=${this.predictionStartYear}`);
+  console.log(`Prediction section: starts at ${predictionStart}% and spans ${predictionPercentage}%`);
+  
+  return {
+    background: `linear-gradient(to right, 
+      #d1d5db 0%, 
+      #d1d5db ${predictionStart}%, 
+      #f8e3c5 ${predictionStart}%, 
+      #f8e3c5 100%)`
+  };
+},
+
+        isPredictionYear(year) {
+  return year >= this.predictionStartYear;
+},
+        
+        togglePlayTimeline() {
+          if (this.isPlaying) {
+            clearInterval(this.playInterval);
+            this.isPlaying = false;
+          } else {
+            this.isPlaying = true;
+            this.playInterval = setInterval(() => {
+              if (this.selectedYear < this.maxYear) {
+                this.selectedYear++;
+              } else {
+                clearInterval(this.playInterval);
+                this.isPlaying = false;
+              }
+            }, 1000); 
+          }
+        },
+        
+        toggleSidebar() {
+          this.sidebarOpen = !this.sidebarOpen;
+        },
+        
+        closeSidebar() {
+          this.sidebarOpen = false;
+        }
+      },
+      
+      watch: {
+        selectedYear() {
+          this.updateMapColors();
+          
+        },
+        
+        selectedVariable() {
+          this.updateGlobalMinMax(this.data);
+          
+          this.updateMapColors();
+          
+        }
+      },
+      
+      mounted() {
+        this.loadData().then(() => {
+          if (this.data && this.data.length > 0) {
+            console.log('Data fields:', Object.keys(this.data[0]));
+            const futureData = this.data.find(d => d.year >= 2024);
+            if (futureData) {
+              console.log('Future data example:', futureData);
+            }
+          }
+        });
+        this.debugCountryMapping();
+      },
+      
+      beforeUnmount() {
+        if (this.playInterval) {
+          clearInterval(this.playInterval);
+        }
+        
+        window.removeEventListener('resize');
+      }
+    });
+    
+    app.mount('#app');
+  </script>
+</body>
+</html>
