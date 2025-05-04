@@ -565,6 +565,9 @@ def build_gbr_model(train_data, test_data, target_col, country_code, forecast_st
             'lower': lower_bounds,
             'upper': upper_bounds
         }
+    except Exception as e:
+        print(f"  GBR error for {country_code}")
+        return None
 
 
 def generate_future_features(historical_data, steps, feature_cols=None):
